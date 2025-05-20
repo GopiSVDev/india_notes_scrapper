@@ -1,20 +1,43 @@
+import express from "express";
 import puppeteer from "puppeteer";
-import fs from "fs";
+import cors from "cors";
 
-const scrape = async (urls) => {
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+async function scrapeLinks(mainUrl) {
   const browser = await puppeteer.launch({ headless: true });
+  const page = await browser.newPage();
+  await page.goto(mainUrl, { waitUntil: "networkidle2" });
 
-  // Initialize a variable to collect all scraped data
+  const links = await page.evaluate(() => {
+    const anchors = Array.from(document.querySelectorAll("article a"));
+    const urls = anchors
+      .map((a) => a.href)
+      .filter(
+        (href) =>
+          href.includes("/financial-accounting") &&
+          href.startsWith("https://indiafreenotes.com")
+      );
+    return [...new Set(urls)];
+  });
+
+  await browser.close();
+  return links;
+}
+
+async function scrapeNotes(urls) {
+  const browser = await puppeteer.launch({ headless: true });
   let allData = [];
 
-  for (let url of urls) {
+  for (const url of urls) {
     const page = await browser.newPage();
     await page.goto(url, { waitUntil: "networkidle2" });
 
     const data = await page.evaluate(() => {
       const textContent = [];
 
-      // Scrape content from <h1> tags
       const headings = document.querySelectorAll("h1");
       headings.forEach((heading) => {
         if (heading.textContent.trim()) {
@@ -22,10 +45,8 @@ const scrape = async (urls) => {
         }
       });
 
-      // Scrape content from <article> tag
       const article = document.querySelector("article");
-      const elements = article ? article.querySelectorAll("span, li") : []; // Get span and li tags inside the article tag
-
+      const elements = article ? article.querySelectorAll("span, li") : [];
       elements.forEach((el) => {
         const style = window.getComputedStyle(el);
         if (
@@ -37,29 +58,51 @@ const scrape = async (urls) => {
         }
       });
 
+      const links = document.querySelectorAll("a");
+      links.forEach((link) => {
+        if (link.textContent.includes("VIEW")) {
+          textContent.push(`Link: ${link.href}`);
+        }
+      });
+
       return textContent;
     });
 
-    // Remove duplicates from the scraped data
     const uniqueData = [...new Set(data)];
-
-    // Collect the scraped content into the allData array
     allData = [...allData, ...uniqueData];
-    console.log(`Scraped data from ${url}`);
+    await page.close();
   }
 
-  // Prepare the data as a plain text string, with each text on a new line
-  const textToWrite = allData.join("\n"); // Join all the unique text items with a newline
-
-  // Save the data to a .txt file
-  fs.writeFileSync("all_notes.txt", textToWrite, "utf-8");
-  console.log("Data saved to all_notes.txt");
-
   await browser.close();
-};
+  return allData;
+}
 
-// List of https://indiafreenotes.com/ URLs to scrape
-const urls = [];
+app.post("/api/scrape-links", async (req, res) => {
+  const { mainUrl } = req.body;
+  if (!mainUrl) return res.status(400).json({ error: "mainUrl is required" });
 
-// Call the scrape function with the array of URLs
-scrape(urls);
+  try {
+    const links = await scrapeLinks(mainUrl);
+    res.json({ links });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/scrape-notes", async (req, res) => {
+  const { urls } = req.body;
+  if (!urls || !Array.isArray(urls) || urls.length === 0)
+    return res.status(400).json({ error: "urls array is required" });
+
+  try {
+    const notes = await scrapeNotes(urls);
+    res.json({ notes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
+});

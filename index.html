@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>IndiaFreeNotes Scraper</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <h2>IndiaFreeNotes Scraper</h2>
+
+    <div class="section">
+      <label for="main-url">Enter main page URL</label><br />
+      <input
+        type="text"
+        id="main-url"
+        placeholder="https://indiafreenotes.com/..."
+      />
+      <button id="fetch-links-btn">Fetch Topic Links</button>
+    </div>
+
+    <div id="links-section" class="section" style="display: none">
+      <h3>Fetched Links</h3>
+      <textarea id="links-textarea" readonly></textarea>
+      <button id="scrape-notes-btn">Scrape Notes</button>
+    </div>
+
+    <div id="notes-section" class="section" style="display: none">
+      <h3>Scraped Notes</h3>
+      <textarea id="notes-textarea" readonly></textarea>
+    </div>
+
+    <script>
+      const API_BASE = "http://localhost:4000/api"; // Change if your server runs elsewhere
+
+      const fetchLinksBtn = document.getElementById("fetch-links-btn");
+      const scrapeNotesBtn = document.getElementById("scrape-notes-btn");
+      const mainUrlInput = document.getElementById("main-url");
+      const linksSection = document.getElementById("links-section");
+      const notesSection = document.getElementById("notes-section");
+      const linksTextarea = document.getElementById("links-textarea");
+      const notesTextarea = document.getElementById("notes-textarea");
+
+      let allLinks = [];
+
+      fetchLinksBtn.addEventListener("click", async () => {
+        const mainUrl = mainUrlInput.value.trim();
+        if (!mainUrl) {
+          alert("Please enter a main URL");
+          return;
+        }
+        fetchLinksBtn.disabled = true;
+        fetchLinksBtn.textContent = "Fetching...";
+
+        try {
+          const res = await fetch(`${API_BASE}/scrape-links`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mainUrl }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            allLinks = data.links;
+            linksTextarea.value = allLinks.join("\n");
+            linksSection.style.display = "block";
+            notesSection.style.display = "none";
+            notesTextarea.value = "";
+          } else {
+            alert("Error: " + data.error);
+          }
+        } catch (err) {
+          alert("Network or server error");
+        } finally {
+          fetchLinksBtn.disabled = false;
+          fetchLinksBtn.textContent = "Fetch Topic Links";
+        }
+      });
+
+      scrapeNotesBtn.addEventListener("click", async () => {
+        if (allLinks.length === 0) {
+          alert("No links to scrape");
+          return;
+        }
+        scrapeNotesBtn.disabled = true;
+        scrapeNotesBtn.textContent = "Scraping...";
+
+        try {
+          const res = await fetch(`${API_BASE}/scrape-notes`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ urls: allLinks }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            notesTextarea.value = data.notes.join("\n\n");
+            notesSection.style.display = "block";
+          } else {
+            alert("Error: " + data.error);
+          }
+        } catch (err) {
+          alert("Network or server error");
+        } finally {
+          scrapeNotesBtn.disabled = false;
+          scrapeNotesBtn.textContent = "Scrape Notes";
+        }
+      });
+    </script>
+  </body>
+</html>
